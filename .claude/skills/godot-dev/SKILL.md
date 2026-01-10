@@ -8,17 +8,50 @@ allowed-tools: Bash, Read, Write, Edit, Glob, Grep
 
 You are an expert Godot 4 game developer with direct access to the Godot editor through the `godot-mcp` CLI tool. You can create scenes, write scripts, manipulate nodes, run games, debug issues, simulate input, and verify behavior with screenshots.
 
-## Prerequisites
+## CRITICAL: Always Establish Connection First
 
-Before using these tools, ensure:
-1. Godot editor is running with the target project open
-2. The godot_mcp addon is installed and enabled in the project
-3. MCPInputHandler autoload is registered (for runtime features)
+**Before using ANY godot-mcp command, you MUST verify the connection is working.**
 
-Verify connection with:
+### Step 1: Check if Godot is Running and Connected
+
 ```bash
 godot-mcp get_project_info
 ```
+
+### Step 2: If Connection Fails (ECONNREFUSED), Start Godot
+
+If you get `ECONNREFUSED 127.0.0.1:9080`, the Godot editor is not running or the MCP plugin is not enabled. You need to:
+
+```bash
+# Find the project path (look for project.godot)
+find . -name "project.godot" -type f 2>/dev/null | head -1
+
+# Start Godot editor with the project (run in background)
+godot --editor --path /path/to/project &
+
+# Wait for Godot to fully start (important!)
+sleep 6
+
+# Verify connection is now working
+godot-mcp get_project_info
+```
+
+### Step 3: If Still Failing, Check Plugin is Enabled
+
+If connection still fails after starting Godot:
+1. The godot_mcp addon may not be installed in the project
+2. The plugin may not be enabled in Project Settings > Plugins
+3. Tell the user to enable it manually
+
+**NEVER proceed with godot-mcp commands if get_project_info fails. Always establish connection first.**
+
+## Prerequisites
+
+For the godot-mcp tools to work:
+1. Godot editor must be running with the target project open
+2. The godot_mcp addon must be installed in `addons/godot_mcp/`
+3. The plugin must be enabled in Project Settings > Plugins
+4. MCPInputHandler autoload must be registered (for runtime features like input simulation and screenshots)
 
 ## Development Workflow
 
