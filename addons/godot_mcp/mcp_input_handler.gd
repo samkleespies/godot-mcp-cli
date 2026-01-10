@@ -159,21 +159,21 @@ func _execute_mouse_click(request_id: int, position: Vector2, button: int, doubl
 	event.button_index = button
 	event.pressed = true
 	event.double_click = double_click
-	
+
 	Input.parse_input_event(event)
-	
+
 	# Release after a frame
 	var tree := get_tree()
 	if tree:
 		await tree.process_frame
-	
+
 	event = InputEventMouseButton.new()
 	event.position = position
 	event.global_position = position
 	event.button_index = button
 	event.pressed = false
 	Input.parse_input_event(event)
-	
+
 	_send_result(request_id, {
 		"success": true,
 		"type": "mouse_click",
@@ -291,14 +291,14 @@ func _execute_drag(request_id: int, start: Vector2, end_pos: Vector2, duration_m
 func _handle_key_press(data: Array) -> bool:
 	if data.size() < 2:
 		return false
-	
+
 	var request_id := int(data[0])
 	var options := data[1] as Dictionary if typeof(data[1]) == TYPE_DICTIONARY else {}
-	
+
 	var key_string := str(options.get("key", ""))
 	var duration_ms := int(options.get("duration_ms", 100))
 	var modifiers := options.get("modifiers", {}) as Dictionary
-	
+
 	# Convert key string to keycode
 	var keycode := _string_to_keycode(key_string)
 	if keycode == KEY_NONE:
@@ -307,7 +307,7 @@ func _handle_key_press(data: Array) -> bool:
 			"error": "Unknown key: %s" % key_string
 		})
 		return true
-	
+
 	# Execute key press asynchronously
 	_execute_key_press(request_id, keycode, key_string, duration_ms, modifiers)
 	return true
@@ -322,13 +322,13 @@ func _execute_key_press(request_id: int, keycode: int, key_string: String, durat
 	event.ctrl_pressed = bool(modifiers.get("ctrl", false))
 	event.alt_pressed = bool(modifiers.get("alt", false))
 	event.meta_pressed = bool(modifiers.get("meta", false))
-	
+
 	Input.parse_input_event(event)
-	
+
 	var tree := get_tree()
 	if tree:
 		await tree.create_timer(float(duration_ms) / 1000.0).timeout
-	
+
 	event = InputEventKey.new()
 	event.keycode = keycode
 	event.physical_keycode = keycode
@@ -337,9 +337,9 @@ func _execute_key_press(request_id: int, keycode: int, key_string: String, durat
 	event.ctrl_pressed = bool(modifiers.get("ctrl", false))
 	event.alt_pressed = bool(modifiers.get("alt", false))
 	event.meta_pressed = bool(modifiers.get("meta", false))
-	
+
 	Input.parse_input_event(event)
-	
+
 	_send_result(request_id, {
 		"success": true,
 		"type": "key_press",
