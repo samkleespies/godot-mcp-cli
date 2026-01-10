@@ -45,20 +45,12 @@ export const screenshotTools: MCPTool[] = [
   {
     name: 'take_screenshot',
     description: 'Capture a screenshot of the currently running Godot game. Returns the image as a base64-encoded PNG that can be viewed directly. Use this to verify visual state, debug rendering issues, or validate game behavior during testing.',
-    parameters: z.object({
-      viewport: z.enum(['main', 'editor']).optional()
-        .describe('Which viewport to capture: "main" for the game window (default), "editor" for the editor viewport'),
-      include_ui: z.boolean().optional()
-        .describe('Whether to include UI/Canvas layers in the screenshot (default: true)')
-    }),
-    execute: async ({ viewport, include_ui }): Promise<string> => {
+    parameters: z.object({}),
+    execute: async (): Promise<string> => {
       const godot = getGodotConnection();
-      const params: Record<string, unknown> = {};
-      if (viewport !== undefined) params.viewport = viewport;
-      if (include_ui !== undefined) params.include_ui = include_ui;
 
       try {
-        const result = await godot.sendCommand('take_screenshot', params) as ScreenshotResult;
+        const result = await godot.sendCommand('take_screenshot', {}) as ScreenshotResult;
         return formatScreenshotResult(result);
       } catch (error) {
         throw new Error(`Failed to take screenshot: ${(error as Error).message}`);

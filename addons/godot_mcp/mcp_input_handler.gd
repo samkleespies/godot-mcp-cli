@@ -545,15 +545,18 @@ func _string_to_keycode(key_string: String) -> int:
 
 
 func _handle_take_screenshot(data: Array) -> bool:
-	var request_id := int(data[0]) if data.size() > 0 else 0
-	var options := data[1] as Dictionary if data.size() > 1 and typeof(data[1]) == TYPE_DICTIONARY else {}
+	if data.size() < 1:
+		push_error("[MCP Input Handler] take_screenshot: missing request_id")
+		return false
+
+	var request_id := int(data[0])
 
 	# Capture screenshot asynchronously to ensure frame is rendered
-	_execute_screenshot(request_id, options)
+	_execute_screenshot(request_id)
 	return true
 
 
-func _execute_screenshot(request_id: int, options: Dictionary) -> void:
+func _execute_screenshot(request_id: int) -> void:
 	var tree := get_tree()
 	if not tree:
 		_send_result(request_id, {
@@ -603,7 +606,11 @@ func _execute_screenshot(request_id: int, options: Dictionary) -> void:
 
 
 func _handle_get_viewport_info(data: Array) -> bool:
-	var request_id := int(data[0]) if data.size() > 0 else 0
+	if data.size() < 1:
+		push_error("[MCP Input Handler] get_viewport_info: missing request_id")
+		return false
+
+	var request_id := int(data[0])
 
 	var tree := get_tree()
 	if not tree:
