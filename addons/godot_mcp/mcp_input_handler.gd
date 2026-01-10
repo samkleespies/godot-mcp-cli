@@ -42,7 +42,11 @@ func _on_capture(message: String, data: Array) -> bool:
 			return _handle_input_sequence(data)
 		"get_input_actions":
 			return _handle_get_input_actions(data)
-	
+		"take_screenshot":
+			return _handle_take_screenshot(data)
+		"get_viewport_info":
+			return _handle_get_viewport_info(data)
+
 	return false
 
 
@@ -538,6 +542,122 @@ func _string_to_keycode(key_string: String) -> int:
 			return code
 	
 	return KEY_NONE
+
+
+func _handle_take_screenshot(data: Array) -> bool:
+	var request_id := int(data[0]) if data.size() > 0 else 0
+	var options := data[1] as Dictionary if data.size() > 1 and typeof(data[1]) == TYPE_DICTIONARY else {}
+
+	# Capture screenshot asynchronously to ensure frame is rendered
+	_execute_screenshot(request_id, options)
+	return true
+
+
+func _execute_screenshot(request_id: int, options: Dictionary) -> void:
+	var tree := get_tree()
+	if not tree:
+		_send_result(request_id, {
+			"success": false,
+			"error": "Scene tree not available"
+		})
+		return
+
+	# Wait for the current frame to finish rendering
+	await RenderingServer.frame_post_draw
+
+	var viewport := tree.root
+	if not viewport:
+		_send_result(request_id, {
+			"success": false,
+			"error": "Root viewport not available"
+		})
+		return
+
+	# Get the texture from the viewport
+	var img := viewport.get_texture().get_image()
+	if not img:
+		_send_result(request_id, {
+			"success": false,
+			"error": "Failed to capture viewport image"
+		})
+		return
+
+	# Encode as PNG and convert to base64
+	var png_data := img.save_png_to_buffer()
+	if png_data.is_empty():
+		_send_result(request_id, {
+			"success": false,
+			"error": "Failed to encode image as PNG"
+		})
+		return
+
+	var base64_data := Marshalls.raw_to_base64(png_data)
+
+	_send_result(request_id, {
+		"success": true,
+		"image_base64": base64_data,
+		"width": img.get_width(),
+		"height": img.get_height(),
+		"format": "PNG"
+	})
+
+
+func _handle_get_viewport_info(data: Array) -> bool:
+	var request_id := int(data[0]) if data.size() > 0 else 0
+
+	var tree := get_tree()
+	if not tree:
+		_send_result(request_id, {
+			"success": false,
+			"error": "Scene tree not available"
+		})
+		return true
+
+	var viewport := tree.root
+	if not viewport:
+		_send_result(request_id, {
+			"success": false,
+			"error": "Root viewport not available"
+		})
+		return true
+
+	var size := viewport.get_visible_rect().size
+
+	_send_result(request_id, {
+		"success": true,
+		"width": int(size.x),
+		"height": int(size.y),
+		"content_scale_mode": _get_scale_mode_name(viewport.content_scale_mode),
+		"content_scale_aspect": _get_scale_aspect_name(viewport.content_scale_aspect),
+		"transparent_bg": viewport.transparent_bg
+	})
+	return true
+
+
+func _get_scale_mode_name(mode: int) -> String:
+	match mode:
+		Window.CONTENT_SCALE_MODE_DISABLED:
+			return "disabled"
+		Window.CONTENT_SCALE_MODE_CANVAS_ITEMS:
+			return "canvas_items"
+		Window.CONTENT_SCALE_MODE_VIEWPORT:
+			return "viewport"
+	return "unknown"
+
+
+func _get_scale_aspect_name(aspect: int) -> String:
+	match aspect:
+		Window.CONTENT_SCALE_ASPECT_IGNORE:
+			return "ignore"
+		Window.CONTENT_SCALE_ASPECT_KEEP:
+			return "keep"
+		Window.CONTENT_SCALE_ASPECT_KEEP_WIDTH:
+			return "keep_width"
+		Window.CONTENT_SCALE_ASPECT_KEEP_HEIGHT:
+			return "keep_height"
+		Window.CONTENT_SCALE_ASPECT_EXPAND:
+			return "expand"
+	return "unknown"
 
 
 func _send_result(request_id: int, result: Dictionary) -> void:
