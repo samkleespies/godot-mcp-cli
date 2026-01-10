@@ -1,9 +1,11 @@
 extends Node
-## Runtime input handler for MCP input simulation.
-## This script runs inside the game (not the editor) and handles input injection
-## via the debugger message system.
+## Runtime input handler for MCP input simulation, scene inspection, and expression evaluation.
+## This script runs inside the game (not the editor) and handles input injection,
+## scene tree capture, and expression evaluation via the debugger message system.
 
 const CAPTURE_NAME := "mcp_input"
+const EVAL_CAPTURE_NAME := "mcp_eval"
+const SCENE_CAPTURE_NAME := "mcp_scene"
 
 var _pending_drags: Dictionary = {}
 
@@ -11,13 +13,15 @@ func _ready() -> void:
 	# Only register in running game, not in editor
 	if Engine.is_editor_hint():
 		return
-	
+
 	if not EngineDebugger.is_active():
-		print("[MCP Input Handler] Debugger not active, input simulation unavailable")
+		print("[MCP Input Handler] Debugger not active, MCP features unavailable")
 		return
-	
+
 	EngineDebugger.register_message_capture(CAPTURE_NAME, _on_capture)
-	print("[MCP Input Handler] Input simulation ready")
+	EngineDebugger.register_message_capture(EVAL_CAPTURE_NAME, _on_eval_capture)
+	EngineDebugger.register_message_capture(SCENE_CAPTURE_NAME, _on_scene_capture)
+	print("[MCP Input Handler] MCP runtime features ready (input, eval, scene)")
 
 
 func _on_capture(message: String, data: Array) -> bool:
@@ -672,3 +676,174 @@ func _get_scale_aspect_name(aspect: int) -> String:
 func _send_result(request_id: int, result: Dictionary) -> void:
 	result["request_id"] = request_id
 	EngineDebugger.send_message("%s:result" % CAPTURE_NAME, [result])
+
+
+# ============================================================================
+# Expression Evaluation Handler
+# ============================================================================
+
+func _on_eval_capture(message: String, data: Array) -> bool:
+	var action := message.substr(EVAL_CAPTURE_NAME.length() + 1) if message.begins_with(EVAL_CAPTURE_NAME + ":") else message
+
+	match action:
+		"evaluate":
+			return _handle_evaluate(data)
+
+	return false
+
+
+func _handle_evaluate(data: Array) -> bool:
+	if data.size() < 2:
+		return false
+
+	var request_id := int(data[0])
+	var expression_text := str(data[1])
+	var options := data[2] as Dictionary if data.size() > 2 and typeof(data[2]) == TYPE_DICTIONARY else {}
+
+	var result := _evaluate_expression(expression_text, options)
+	result["request_id"] = request_id
+	EngineDebugger.send_message("%s:result" % EVAL_CAPTURE_NAME, [result])
+	return true
+
+
+func _evaluate_expression(expression_text: String, options: Dictionary) -> Dictionary:
+	var trimmed := expression_text.strip_edges()
+	if trimmed.is_empty():
+		return { "success": false, "error": "Expression cannot be empty" }
+
+	# Get context node if specified
+	var context_node: Node = null
+	var node_path := str(options.get("node_path", ""))
+	if not node_path.is_empty():
+		var tree := get_tree()
+		if tree:
+			context_node = tree.root.get_node_or_null(node_path)
+			if context_node == null:
+				return { "success": false, "error": "Context node not found: %s" % node_path }
+
+	# Create and configure the Expression object
+	var expr := Expression.new()
+	var parse_error := expr.parse(trimmed)
+	if parse_error != OK:
+		return {
+			"success": false,
+			"error": "Parse error: %s" % expr.get_error_text()
+		}
+
+	# Execute the expression
+	var base_instance: Object = context_node if context_node else self
+	var exec_result = expr.execute([], base_instance)
+
+	if expr.has_execute_failed():
+		return {
+			"success": false,
+			"error": "Execution error: %s" % expr.get_error_text()
+		}
+
+	# Format the result
+	var result_str := ""
+	if exec_result == null:
+		result_str = "null"
+	elif typeof(exec_result) == TYPE_OBJECT:
+		if exec_result is Node:
+			result_str = "<%s: %s>" % [exec_result.get_class(), exec_result.name]
+		else:
+			result_str = "<%s>" % exec_result.get_class()
+	else:
+		result_str = var_to_str(exec_result)
+
+	return {
+		"success": true,
+		"result": result_str,
+		"type": type_string(typeof(exec_result)),
+		"output": []
+	}
+
+
+# ============================================================================
+# Scene Tree Capture Handler
+# ============================================================================
+
+func _on_scene_capture(message: String, data: Array) -> bool:
+	var action := message.substr(SCENE_CAPTURE_NAME.length() + 1) if message.begins_with(SCENE_CAPTURE_NAME + ":") else message
+
+	match action:
+		"get_tree":
+			return _handle_get_scene_tree(data)
+
+	return false
+
+
+func _handle_get_scene_tree(data: Array) -> bool:
+	var request_id := int(data[0]) if data.size() > 0 else 0
+	var options := data[1] as Dictionary if data.size() > 1 and typeof(data[1]) == TYPE_DICTIONARY else {}
+
+	var tree := get_tree()
+	if not tree:
+		_send_scene_result(request_id, { "success": false, "error": "Scene tree not available" })
+		return true
+
+	var root := tree.root
+	if not root:
+		_send_scene_result(request_id, { "success": false, "error": "Root node not available" })
+		return true
+
+	# Get the main scene (first child of root that isn't an autoload)
+	var main_scene: Node = null
+	for child in root.get_children():
+		# Skip autoloads (they're typically at the top)
+		if child.name != "MCPInputHandler":
+			main_scene = child
+			break
+
+	if main_scene == null:
+		main_scene = root
+
+	var max_depth := int(options.get("max_depth", -1))
+	var tree_data := _build_scene_tree_data(main_scene, 0, max_depth)
+
+	_send_scene_result(request_id, {
+		"success": true,
+		"scene_path": main_scene.scene_file_path if main_scene.scene_file_path else "runtime",
+		"root_node_name": main_scene.name,
+		"root_node_type": main_scene.get_class(),
+		"structure": tree_data,
+		"runtime": true
+	})
+	return true
+
+
+func _build_scene_tree_data(node: Node, depth: int, max_depth: int) -> Dictionary:
+	var node_data := {
+		"name": node.name,
+		"type": node.get_class(),
+		"path": str(node.get_path()),
+		"children": []
+	}
+
+	# Add visibility info for CanvasItems
+	if node is CanvasItem:
+		node_data["visible"] = node.visible
+		node_data["visible_in_tree"] = node.is_visible_in_tree()
+
+	# Add position info for Node2D
+	if node is Node2D:
+		node_data["position"] = [node.position.x, node.position.y]
+		node_data["global_position"] = [node.global_position.x, node.global_position.y]
+
+	# Add position info for Node3D
+	if node is Node3D:
+		node_data["position"] = [node.position.x, node.position.y, node.position.z]
+		node_data["global_position"] = [node.global_position.x, node.global_position.y, node.global_position.z]
+
+	# Recurse into children if within depth limit
+	if max_depth < 0 or depth < max_depth:
+		for child in node.get_children():
+			node_data["children"].append(_build_scene_tree_data(child, depth + 1, max_depth))
+
+	return node_data
+
+
+func _send_scene_result(request_id: int, result: Dictionary) -> void:
+	result["request_id"] = request_id
+	EngineDebugger.send_message("%s:result" % SCENE_CAPTURE_NAME, [result])
