@@ -343,17 +343,11 @@ func _take_input_result(session_id: int, request_id: int) -> Dictionary:
 	return {}
 
 
-func _handle_take_screenshot(client_id: int, params: Dictionary, command_id: String) -> void:
-	var options := {}
-	if params.has("viewport"):
-		options["viewport"] = params["viewport"]
-	if params.has("include_ui"):
-		options["include_ui"] = params["include_ui"]
-
+func _handle_take_screenshot(client_id: int, _params: Dictionary, command_id: String) -> void:
 	# Use longer timeout for screenshots (they can take time to capture and encode)
 	var timeout := 5000
 
-	var result := await _send_input_command("take_screenshot", [options], timeout)
+	var result := await _send_input_command("take_screenshot", [], timeout)
 	if result.has("error"):
 		_send_error(client_id, result["error"], command_id)
 	else:
