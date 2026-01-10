@@ -566,7 +566,9 @@ func _execute_screenshot(request_id: int) -> void:
 		return
 
 	# Wait for the current frame to finish rendering
-	await RenderingServer.frame_post_draw
+	# Use process_frame instead of RenderingServer.frame_post_draw for better compatibility
+	await tree.process_frame
+	await tree.process_frame  # Wait 2 frames to ensure rendering is complete
 
 	var viewport := tree.root
 	if not viewport:
